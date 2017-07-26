@@ -1,4 +1,4 @@
-package com.iflix.cdslogprocessor.util;
+package com.bluedevel.concurrent;
 
 import java.io.Closeable;
 import java.io.IOException;

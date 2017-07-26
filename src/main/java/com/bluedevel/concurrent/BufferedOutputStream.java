@@ -1,4 +1,4 @@
-package com.bluedevel.util;
+package com.bluedevel.concurrent;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -11,7 +11,7 @@ import java.util.concurrent.ArrayBlockingQueue;
  * This class provides a buffered outputstream that works better under contention
  * than the JDK default BufferedOutputStream.
  */
-public class BufferedOutputStream2 extends OutputStream {
+public class BufferedOutputStream extends OutputStream {
 
     /**
      * Implementation notes:
@@ -72,7 +72,7 @@ public class BufferedOutputStream2 extends OutputStream {
     private volatile boolean isClosed;
     private final OutputStream out;
     private final int size;
-    public BufferedOutputStream2(final OutputStream out, int size) {
+    public BufferedOutputStream(final OutputStream out, int size) {
         this.out = out;
         this.size = size;
         this.stateRef = new AtomicReference<State>(new State());

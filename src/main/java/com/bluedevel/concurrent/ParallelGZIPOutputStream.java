@@ -1,4 +1,4 @@
-package com.bluedevel.util;
+package com.bluedevel.concurrent;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -50,13 +50,13 @@ public class ParallelGZIPOutputStream extends OutputStream {
      * and closed.
      */
 
-    private final ConcurrentLinkedQueue<Future<Buffer>> writerQueue;
+    private final ConcurrentLinkedQueue<Future<OutputBuffer>> writerQueue;
     private final Writer writer;
     private final ThreadPoolExecutor threadPool;
     private volatile boolean isClosed = false;
 
     public ParallelGZIPOutputStream(final OutputStream out, final ThreadPoolExecutor tpe) throws IOException {
-        this.writerQueue = new ConcurrentLinkedQueue<Future<Buffer>>();
+        this.writerQueue = new ConcurrentLinkedQueue<Future<OutputBuffer>>();
         this.threadPool = tpe;
         this.writer = new Writer(writerQueue, out);
         threadPool.submit(writer);
@@ -66,13 +66,13 @@ public class ParallelGZIPOutputStream extends OutputStream {
     public void close() throws IOException {
         if (isClosed) throw new IOException("stream already closed");
         isClosed = true;
-        writerQueue.add(threadPool.submit(() -> Buffer.close()));
+        writerQueue.add(threadPool.submit(() -> OutputBuffer.close()));
     }
 
     @Override
     public void flush() throws IOException {
         if (isClosed) throw new IOException("stream already closed");
-        writerQueue.add(threadPool.submit(() -> Buffer.flush()));
+        writerQueue.add(threadPool.submit(() -> OutputBuffer.flush()));
     }
 
     @Override
@@ -84,7 +84,7 @@ public class ParallelGZIPOutputStream extends OutputStream {
     public void write(byte[] b, int off, int len) throws IOException {
         if (isClosed) throw new IOException("stream already closed");
         byte[] local = b.clone();
-        writerQueue.add(threadPool.submit(new CompressionTask(Buffer.data(local, off, len))));
+        writerQueue.add(threadPool.submit(new CompressionTask(new InputBuffer(local, off, len))));
     }
 
     @Override
@@ -93,38 +93,53 @@ public class ParallelGZIPOutputStream extends OutputStream {
     }
 
     /**
-     * Wraps up a data buffer for handover between the different stages
+     * Wraps up input data before compression
      */
-    private static class Buffer {
+    private static class InputBuffer {
+        private final byte[] data;
+        private final int offset;
+        private final int length;
+        public InputBuffer(byte[] data, int offset, int length) {
+            this.data = data;
+            this.offset = offset;
+            this.length = length;
+        }
+    }
+
+    /**
+     * Wraps up a data buffer after compression
+     */
+    private static class OutputBuffer {
         private final byte[] data;
         private final int offset;
         private final int length;
         private final boolean flush;
         private final boolean close;
-        private final Buffer parent;
-        public Buffer(byte[] data, int offset, int length, boolean flush, boolean close, Buffer parent) {
+        private final InputBuffer parent;
+        public OutputBuffer(byte[] data, int offset, int length, InputBuffer parent, boolean flush, boolean close) {
             this.data = data;
             this.offset = offset;
             this.length = length;
-            this.flush = flush;
-            this.close = close;
             this.parent = parent;
+            this.flush = false;
+            this.close = false;
         }
 
-        public static Buffer data(byte[] data, int offset, int length) {
-            return new Buffer(data, offset, length, false, false, null);
+        public OutputBuffer(byte[] data, int offset, int length, InputBuffer parent) {
+            this.data = data;
+            this.offset = offset;
+            this.length = length;
+            this.parent = parent;
+            this.flush = false;
+            this.close = false;
         }
 
-        public static Buffer data(byte[] data, int offset, int length, Buffer parent) {
-            return new Buffer(data, offset, length, false, false, parent);
+        public static OutputBuffer flush() {
+            return new OutputBuffer(null, 0, 0, null, true, false);
         }
 
-        public static Buffer flush() {
-            return new Buffer(null, 0, 0, true, false, null);
-        }
-
-        public static Buffer close() {
-            return new Buffer(null, 0, 0, false, true, null);
+        public static OutputBuffer close() {
+            return new OutputBuffer(null, 0, 0, null, false, true);
         }
 
     }
@@ -132,7 +147,7 @@ public class ParallelGZIPOutputStream extends OutputStream {
     /**
      * Takes a buffer, compresses it, stores it in another buffer, and returns the result
      */
-    private static class CompressionTask implements Callable<Buffer> {
+    private static class CompressionTask implements Callable<OutputBuffer> {
 
         private static class CompressionTaskState {
             private final ByteArrayOutputStream byteBuffer = new ByteArrayOutputStream(1024);
@@ -146,12 +161,12 @@ public class ParallelGZIPOutputStream extends OutputStream {
             }
         };
 
-        private final Buffer buffer;
-        public CompressionTask(Buffer buffer) {
+        private final InputBuffer buffer;
+        public CompressionTask(InputBuffer buffer) {
             this.buffer = buffer;
         }
 
-        public Buffer call() throws IOException {
+        public OutputBuffer call() throws IOException {
             CompressionTaskState state = compressorState.get();
                 
             state.deflater.reset();
@@ -161,7 +176,7 @@ public class ParallelGZIPOutputStream extends OutputStream {
             state.deflaterStream.flush();
             byte[] bytes = state.byteBuffer.toByteArray();
 
-            return Buffer.data(bytes, 0, bytes.length, buffer);
+            return new OutputBuffer(bytes, 0, bytes.length, buffer);
         }
     }
 
@@ -172,13 +187,13 @@ public class ParallelGZIPOutputStream extends OutputStream {
         private static final int GZIP_MAGIC = 0x8b1f;
 
         private final OutputStream out;
-        private final ConcurrentLinkedQueue<Future<Buffer>> queue;
+        private final ConcurrentLinkedQueue<Future<OutputBuffer>> queue;
         private long nextToWrite = 0;
         private boolean allDone = false;
         private long totalBytes = 0;
         private final CRC32 crc32 = new CRC32();
 
-        public Writer(final ConcurrentLinkedQueue<Future<Buffer>> queue, final OutputStream out) throws IOException {
+        public Writer(final ConcurrentLinkedQueue<Future<OutputBuffer>> queue, final OutputStream out) throws IOException {
             this.queue = queue;
             this.out = out;
             writeGzipHeader();
@@ -197,7 +212,7 @@ public class ParallelGZIPOutputStream extends OutputStream {
         public void run() {
             try {
                 while (!allDone) {
-                    Future<Buffer> next = queue.poll();
+                    Future<OutputBuffer> next = queue.poll();
                     if (next == null) {
                         Thread.sleep(1);
                     } else {
@@ -209,7 +224,7 @@ public class ParallelGZIPOutputStream extends OutputStream {
             }
         }
 
-        private void handleBuffer(Buffer b) throws IOException {
+        private void handleBuffer(OutputBuffer b) throws IOException {
             if (b.data != null) {
                 out.write(b.data, b.offset, b.length);
                 totalBytes += b.parent.length;
