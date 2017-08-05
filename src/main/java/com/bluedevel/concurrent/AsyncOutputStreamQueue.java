@@ -6,7 +6,24 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.concurrent.ArrayBlockingQueue;
 
+/**
+ * Allows offload of the work to the next stage of an OutputStream on another thread
+ * via a queue. This means your producer can keep generating data to put on the output
+ * stream while the next stage is performing the actual output work.
+ * 
+ * Ideally this is what the PipedInputStream / PipedOutputStream should do.  Unfortunately
+ * the PipedOutputStream has 1sec sleeps and requires wait/notify or other solutions
+ * to get a reasonable performance.
+ */
 public class AsyncOutputStreamQueue extends OutputStream {
+
+    /**
+     * Implementation notes:
+     *
+     * A byte array of length 0 is used to flag the "close" or end of stream.
+     * So, we need to make sure we do not pass a zero-length array to the queue
+     * and ensure it is only sent if close() is explicitly called
+     */
 
     private static final int BUFFER_SIZE = 64;
     private final ArrayBlockingQueue<BufferHolder> queue = new ArrayBlockingQueue<BufferHolder>(BUFFER_SIZE);
@@ -14,11 +31,6 @@ public class AsyncOutputStreamQueue extends OutputStream {
         new Thread(new QueueReader(out), threadName).start();
     }
 
-    /**
-     * A byte array of length 0 is used to flag the "close" or end of stream.
-     * So, we need to make sure we do not pass a zero-length array to the queue
-     * and ensure it is only sent if close() is explicitly called
-     */
     @Override
     public void write(byte[] b) {
         if (b.length != 0) {
@@ -52,7 +64,9 @@ public class AsyncOutputStreamQueue extends OutputStream {
     }
 
     @Override
-    public void flush() { }
+    public void flush() {
+        // TODO would be nice to handle this explicitly
+    }
 
     private class BufferHolder {
         public final byte[] buffer;
@@ -81,6 +95,8 @@ public class AsyncOutputStreamQueue extends OutputStream {
                         }
                         out.write(bufferHolder.buffer);
                     }
+                    // TODO every time we run through a full batch, we flush the output stream
+                    // this may not be efficient
                     buffers.clear();
                     out.flush();
                 }

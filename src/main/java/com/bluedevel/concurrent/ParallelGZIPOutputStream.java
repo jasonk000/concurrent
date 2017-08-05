@@ -13,7 +13,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -21,12 +20,21 @@ import java.util.zip.DeflaterOutputStream;
 /**
  * A parallel implementation of a gzip output stream.
  *
+ * A parallel implementation of gzip for the JVM. A drop-in replacement for the existing
+ * GZIPOutputStream. Achieve a significant improvement in your gzip output performance.
+ *
+ * Inspired by Shevek's work, only without a buffer and with a little less locking
+ * https://github.com/shevek/parallelgzip
+ *
  * Works in chunks and gzips each them before passing them to the next
  * OutputStream.
  *
  * For efficiency, you should pass larger chunks to the stream to ensure
  * the stream has a chance to compress effectively. No buffering is
  * performed inside this class.
+ *
+ * Note this uses Thread.sleep(1) as a "backoff" mechanism so it's intended
+ * to be used quickly and close() as soon as possible.
  */
 public class ParallelGZIPOutputStream extends OutputStream {
 
@@ -83,6 +91,8 @@ public class ParallelGZIPOutputStream extends OutputStream {
     @Override
     public void write(byte[] b, int off, int len) throws IOException {
         if (isClosed) throw new IOException("stream already closed");
+        if (len == 0) return;
+
         byte[] local = b.clone();
         writerQueue.add(threadPool.submit(new CompressionTask(new InputBuffer(local, off, len))));
     }
@@ -121,8 +131,8 @@ public class ParallelGZIPOutputStream extends OutputStream {
             this.offset = offset;
             this.length = length;
             this.parent = parent;
-            this.flush = false;
-            this.close = false;
+            this.flush = flush;
+            this.close = close;
         }
 
         public OutputBuffer(byte[] data, int offset, int length, InputBuffer parent) {
