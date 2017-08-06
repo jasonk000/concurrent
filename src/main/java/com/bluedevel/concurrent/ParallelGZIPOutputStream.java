@@ -23,7 +23,7 @@ import java.util.zip.DeflaterOutputStream;
  * A parallel implementation of gzip for the JVM. A drop-in replacement for the existing
  * GZIPOutputStream. Achieve a significant improvement in your gzip output performance.
  *
- * Inspired by Shevek's work, only without a buffer and with a little less locking
+ * Ground up fresh write, which was inspired by Shevek's work
  * https://github.com/shevek/parallelgzip
  *
  * Works in chunks and gzips each them before passing them to the next
