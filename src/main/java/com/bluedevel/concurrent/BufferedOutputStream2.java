@@ -51,12 +51,12 @@ public class BufferedOutputStream2 extends OutputStream {
                         continue;
                     }
 
-                    if (chunk.offset == -2) {
+                    if (chunk.offset == -1) {
                         buffer.writeTo(out);
                         out.flush();
                     }
 
-                    if (chunk.offset == -1) {
+                    if (chunk.offset == -2) {
                         buffer.writeTo(out);
                         out.flush();
                         out.close();
@@ -83,7 +83,7 @@ public class BufferedOutputStream2 extends OutputStream {
     private final MpscArrayQueue<Chunk> queue;
     private final Chunk POISON_PILL = new Chunk(null, -2, -2);
     private final Chunk FLUSH = new Chunk(null, -1, -1);
-    public BufferedOutputStream2(final OutputStream out, int ignored) {
+    public BufferedOutputStream2(final OutputStream out) {
         this.isClosed = false;
         this.out = out;
         this.queue = new MpscArrayQueue<>(8192);
