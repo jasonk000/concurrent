@@ -28,7 +28,7 @@ public class BufferedOutputStream extends OutputStream {
      * blocks are complete, there is an additional CAS on an AtomicInteger
      * to specify the total write length.
      *
-     * TODO on large core count machines the flush() spin becomes a bottleneck
+     * TODO hard coded buffer size and stripe details
      * TODO on write() call with lengths larger than buffer_size is not handled
      */
 
@@ -142,16 +142,7 @@ public class BufferedOutputStream extends OutputStream {
         int stripe = getStripe();
 
         for(int i = 0; i < STRIPE_COUNT; i++) {
-            while(true) {
-                State current = stateRefs.get(i);
-
-                // spin to wait for writes to catch up
-                if (current.published != current.claimed) {
-                    continue;
-                }
-
-                break;
-            }
+            flush(i);
         }
 
         out.close();
