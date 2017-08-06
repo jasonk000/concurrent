@@ -26,53 +26,48 @@ public class AsyncOutputStreamQueue extends OutputStream {
      */
 
     private static final int BUFFER_SIZE = 64;
-    private final ArrayBlockingQueue<BufferHolder> queue = new ArrayBlockingQueue<BufferHolder>(BUFFER_SIZE);
-    public AsyncOutputStreamQueue(final OutputStream out, final String threadName) {
-        new Thread(new QueueReader(out), threadName).start();
+    private final ArrayBlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(BUFFER_SIZE);
+    public AsyncOutputStreamQueue(final OutputStream out) {
+        new Thread(new QueueReader(out)).start();
     }
 
     @Override
-    public void write(byte[] b) {
-        if (b.length != 0) {
-            try {
-                queue.put(new BufferHolder(b));
-            } catch (InterruptedException ignored) {
-            }
+    public void write(byte[] b) throws IOException {
+        if (b.length == 0) return;
+
+        try {
+            queue.put(b);
+        } catch (InterruptedException ignored) {
+            throw new IOException("was interrupted");
         }
     }
 
     @Override
-    public void write(byte[] b, int offset, int length) {
-        if (length != 0) {
-            byte[] dest = new byte[length];
-            System.arraycopy(b, offset, dest, 0, length);
-            write(dest);
-        }
+    public void write(byte[] b, int offset, int length) throws IOException {
+        if (length == 0) return;
+        
+        byte[] dest = new byte[length];
+        System.arraycopy(b, offset, dest, 0, length);
+        write(dest);
     }
 
     @Override
-    public void write(int b) {
+    public void write(int b) throws IOException {
         write(new byte[] { (byte) (b & 0xff) });
     }
 
     @Override
-    public void close() {
+    public void close() throws IOException {
         try {
-            queue.put(new BufferHolder(new byte[0]));
+            queue.put(new byte[0]);
         } catch (InterruptedException ignored) {
+            throw new IOException("was interrupted");
         }
     }
 
     @Override
     public void flush() {
-        // TODO would be nice to handle this explicitly
-    }
-
-    private class BufferHolder {
-        public final byte[] buffer;
-        public BufferHolder(final byte[] buffer) {
-            this.buffer = buffer;
-        }
+        // TODO would be nice to handle this
     }
 
     private class QueueReader implements Runnable {
@@ -85,25 +80,26 @@ public class AsyncOutputStreamQueue extends OutputStream {
         public void run() {
             try {
                 while (true) {
-                    ArrayList<BufferHolder> buffers = new ArrayList<BufferHolder>(BUFFER_SIZE * 2);
+                    ArrayList<byte[]> buffers = new ArrayList<>(BUFFER_SIZE * 2);
                     buffers.add(queue.take());
                     queue.drainTo(buffers);
-                    for(BufferHolder bufferHolder : buffers) {
-                        if (bufferHolder.buffer.length == 0) {
-                            out.flush();
+                    for(byte[] buffer : buffers) {
+                        if (buffer.length == 0) {
                             return;
                         }
-                        out.write(bufferHolder.buffer);
+                        out.write(buffer);
                     }
-                    // TODO every time we run through a full batch, we flush the output stream
-                    // this may not be efficient
                     buffers.clear();
-                    out.flush();
                 }
             } catch (InterruptedException ignored) {
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
+                try {
+                    out.flush();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
                 close(out);
             }
         }
@@ -114,9 +110,7 @@ public class AsyncOutputStreamQueue extends OutputStream {
                     closeable.close();
                 } catch (IOException ignored) {
                 }
-
             }
         }
     }
-
 }
