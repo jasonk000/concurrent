@@ -9,7 +9,7 @@ import org.jctools.queues.MpmcArrayQueue;
 /*
  * A BlockingQueue implementation built upon Nitsan W's JCTools queues.
  *
- * Use it in a contended executor service.
+ * Use it in a contended executor service, not much else is supported.
  */
 public class CustomBlockingMpmcQueue<E> extends MpmcArrayQueue<E> implements BlockingQueue<E> {
 
