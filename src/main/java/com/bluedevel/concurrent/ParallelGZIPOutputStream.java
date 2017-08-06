@@ -12,7 +12,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ExecutorService;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -60,10 +60,10 @@ public class ParallelGZIPOutputStream extends OutputStream {
 
     private final ConcurrentLinkedQueue<Future<OutputBuffer>> writerQueue;
     private final Writer writer;
-    private final ThreadPoolExecutor threadPool;
+    private final ExecutorService threadPool;
     private volatile boolean isClosed = false;
 
-    public ParallelGZIPOutputStream(final OutputStream out, final ThreadPoolExecutor tpe) throws IOException {
+    public ParallelGZIPOutputStream(final OutputStream out, final ExecutorService tpe) throws IOException {
         this.writerQueue = new ConcurrentLinkedQueue<Future<OutputBuffer>>();
         this.threadPool = tpe;
         this.writer = new Writer(writerQueue, out);
